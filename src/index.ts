@@ -1,3 +1,4 @@
+import { AuthenticationError, ForbiddenError, SyntaxError } from 'apollo-server-errors';
 import { type FieldNode, type OperationDefinitionNode } from 'graphql';
 import { useGenericAuth, type ResolveUserFn, type ValidateUserFn } from '@envelop/generic-auth';
 import { type MeshPlugin, type MeshPluginOptions } from '@graphql-mesh/types';
@@ -54,11 +55,11 @@ const validateUser = (
         }
 
         if (!params?.user) {
-            throw new Error('Unauthenticated');
+            throw new AuthenticationError('Unauthenticated.');
         }
 
         if (params.user.allow.length === 0) {
-            throw new Error('Permission denied: all');
+            throw new ForbiddenError('Forbidden.');
         }
 
         if (params.user.allow[0] === '*') {
@@ -68,14 +69,14 @@ const validateUser = (
         const definition = params?.executionArgs?.document
             ?.definitions[0] as OperationDefinitionNode;
         if (!definition) {
-            throw new Error('Definition not found');
+            throw new SyntaxError('Definition not found.');
         }
 
         if (
             !definition?.selectionSet?.selections ||
             definition.selectionSet.selections.length === 0
         ) {
-            throw new Error('Selections not found');
+            throw new SyntaxError('Selections not found.');
         }
 
         const types = parseMethodsArray(params.user.allow);
@@ -84,7 +85,7 @@ const validateUser = (
             definition.operation.charAt(0).toUpperCase() + definition.operation.slice(1);
 
         if (!Object.keys(types).includes(operation)) {
-            throw new Error(`Permission denied: ${operation}`);
+            throw new ForbiddenError(`Forbidden: ${operation}.`);
         }
 
         for (const selection of definition.selectionSet.selections) {
@@ -93,7 +94,7 @@ const validateUser = (
                 !fieldNode?.name?.value ||
                 !Object.keys(types[operation as RootType]?.methods).includes(fieldNode.name.value)
             ) {
-                throw new Error(`Permission denied: ${fieldNode.name.value}`);
+                throw new ForbiddenError(`ForbiddenError: ${fieldNode.name.value}.`);
             }
         }
     };
