@@ -1,9 +1,8 @@
-import { AuthenticationError, ForbiddenError, SyntaxError } from 'apollo-server-errors';
-import { type FieldNode, type OperationDefinitionNode } from 'graphql';
+import { AuthenticationError } from 'apollo-server-errors';
 import { useGenericAuth, type ResolveUserFn, type ValidateUserFn } from '@envelop/generic-auth';
 import { type MeshPlugin, type MeshPluginOptions } from '@graphql-mesh/types';
-import { type RootType, type XApiKeyAuthConfig, type XApiKeyAuthConfigPermission } from './types';
-import { evaluate, parseMethodsArray } from './utils';
+import { type XApiKeyAuthConfig, type XApiKeyAuthConfigPermission } from './types';
+import { evaluate } from './utils';
 
 export default function useXApiKeyAuth(
     options: MeshPluginOptions<XApiKeyAuthConfig>,
@@ -27,17 +26,20 @@ const resolveUserFn = (
     // @ts-expect-error
     return (context): XApiKeyAuthConfigPermission | undefined => {
         // @ts-expect-error
-        if (context?.headers['x-api-key']) {
+        if (context?.request?.headers?.get('x-api-key')) {
             const permission = options.permissions.find(
-                // @ts-expect-error
-                perm => evaluate(perm.apiKey) === context.headers['x-api-key'],
+                perm =>
+                    evaluate(perm.apiKey).toString() ===
+                    // @ts-expect-error
+                    context.request.headers.get('x-api-key').toString(),
             );
 
             if (permission) {
                 return {
-                    ...permission,
-                    apiKey: evaluate(permission.apiKey),
-                    name: evaluate(permission.name),
+                    apiKey: evaluate(permission.apiKey).toString(),
+                    email: evaluate(permission.email).toString(),
+                    name: evaluate(permission.name).toString(),
+                    roles: permission.roles,
                 } as XApiKeyAuthConfigPermission;
             }
 
@@ -56,46 +58,6 @@ const validateUser = (
 
         if (!params?.user) {
             throw new AuthenticationError('Unauthenticated.');
-        }
-
-        if (params.user.allow.length === 0) {
-            throw new ForbiddenError('Forbidden.');
-        }
-
-        if (params.user.allow[0] === '*') {
-            return;
-        }
-
-        const definition = params?.executionArgs?.document
-            ?.definitions[0] as OperationDefinitionNode;
-        if (!definition) {
-            throw new SyntaxError('Definition not found.');
-        }
-
-        if (
-            !definition?.selectionSet?.selections ||
-            definition.selectionSet.selections.length === 0
-        ) {
-            throw new SyntaxError('Selections not found.');
-        }
-
-        const types = parseMethodsArray(params.user.allow);
-
-        const operation =
-            definition.operation.charAt(0).toUpperCase() + definition.operation.slice(1);
-
-        if (!Object.keys(types).includes(operation)) {
-            throw new ForbiddenError(`Forbidden: ${operation}.`);
-        }
-
-        for (const selection of definition.selectionSet.selections) {
-            const fieldNode = selection as FieldNode;
-            if (
-                !fieldNode?.name?.value ||
-                !Object.keys(types[operation as RootType]?.methods).includes(fieldNode.name.value)
-            ) {
-                throw new ForbiddenError(`ForbiddenError: ${fieldNode.name.value}.`);
-            }
         }
     };
 };
